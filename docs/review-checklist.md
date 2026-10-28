@@ -1,0 +1,18 @@
+# Review checklist
+- [ ] `mvn clean package` succeeds on the review laptop.
+- [ ] All six applications start.
+- [ ] Eureka shows the services registered.
+- [ ] Gateway routes work.
+- [ ] Reservation cancellation leaves the token count unchanged.
+- [ ] Starting a reserved retry consumes one token.
+- [x] Feedback service exposes acknowledgement status; the frontend gates reservation until acknowledgement.
+- [ ] Signed JWTs and roles are validated in Gateway and each domain service.
+- [ ] Event producer and consumer are connected to `soa.s09.t09.events`.
+- [ ] Duplicate event IDs produce one business effect; invalid events reach a DLQ.
+- [x] Entitlement JUnit business-rule tests pass.
+- [x] Maven reactor build passes.
+- [x] Frontend TypeScript/Vite production build passes.
+- [ ] Two instances demonstrate Gateway load balancing and recovery.
+- [ ] CI and repeatable load-check evidence are available.
+- [x] Local frontend workflow is documented and uses gateway APIs.
+- [ ] Report/screenshots show only verified behavior.

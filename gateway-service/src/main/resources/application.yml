@@ -1,0 +1,47 @@
+server:
+  port: 8080
+spring:
+  application:
+    name: gateway-service
+  cloud:
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins:
+              - "http://localhost:5173"
+              - "http://127.0.0.1:5173"
+              - "http://localhost:3000"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders: "*"
+            allowCredentials: false
+      routes:
+        - id: auth
+          uri: lb://AUTH-SERVICE
+          predicates:
+            - Path=/auth, /auth/**
+        - id: attempts
+          uri: lb://LAB-ATTEMPT-SERVICE
+          predicates:
+            - Path=/attempts, /attempts/**
+        - id: feedback
+          uri: lb://FEEDBACK-ACK-SERVICE
+          predicates:
+            - Path=/feedback, /feedback/**
+        - id: entitlements
+          uri: lb://RETRY-ENTITLEMENT-SERVICE
+          predicates:
+            - Path=/entitlements, /entitlements/**
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka
+  instance:
+    prefer-ip-address: true
+    ip-address: 127.0.0.1
+    instance-id: ${spring.application.name}:${server.port}
