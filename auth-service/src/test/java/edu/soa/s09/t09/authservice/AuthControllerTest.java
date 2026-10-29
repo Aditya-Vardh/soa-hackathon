@@ -7,21 +7,41 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.lang.reflect.Proxy;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.*;
 
 class AuthControllerTest {
     private UserRepository userRepository;
     private JwtUtil jwtUtil;
     private AuthController authController;
+    private Map<String, User> userMap;
 
     @BeforeEach
     void setUp() {
-        userRepository = mock(UserRepository.class);
+        userMap = new HashMap<>();
+        userRepository = (UserRepository) Proxy.newProxyInstance(
+                UserRepository.class.getClassLoader(),
+                new Class<?>[]{UserRepository.class},
+                (proxy, method, args) -> {
+                    if ("findByUsername".equals(method.getName()) && args != null && args.length > 0) {
+                        return Optional.ofNullable(userMap.get(args[0]));
+                    }
+                    if ("count".equals(method.getName())) {
+                        return (long) userMap.size();
+                    }
+                    if ("save".equals(method.getName()) && args != null && args.length > 0) {
+                        User u = (User) args[0];
+                        userMap.put(u.getUsername(), u);
+                        return u;
+                    }
+                    return null;
+                }
+        );
         jwtUtil = new JwtUtil();
         authController = new AuthController(userRepository, jwtUtil);
     }
@@ -29,7 +49,7 @@ class AuthControllerTest {
     @Test
     void loginSuccessReturnsValidSignedJwt() {
         User user = new User("learner1", "password", "ROLE_LEARNER", "Alex Mercer");
-        when(userRepository.findByUsername("learner1")).thenReturn(Optional.of(user));
+        userMap.put("learner1", user);
 
         ResponseEntity<Map<String, Object>> response = authController.login(
                 Map.of("username", "learner1", "password", "password"), null, null);
@@ -49,7 +69,7 @@ class AuthControllerTest {
     @Test
     void loginInvalidPasswordThrowsUnauthorized() {
         User user = new User("learner1", "password", "ROLE_LEARNER", "Alex Mercer");
-        when(userRepository.findByUsername("learner1")).thenReturn(Optional.of(user));
+        userMap.put("learner1", user);
 
         assertThatThrownBy(() -> authController.login(
                 Map.of("username", "learner1", "password", "wrongpassword"), null, null))
@@ -57,4 +77,3 @@ class AuthControllerTest {
                 .matches(e -> ((ResponseStatusException) e).getStatusCode() == HttpStatus.UNAUTHORIZED);
     }
 }
-

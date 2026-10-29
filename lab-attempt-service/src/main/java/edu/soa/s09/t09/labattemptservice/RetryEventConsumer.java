@@ -5,10 +5,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 @Component
+@ConditionalOnProperty(name = "spring.kafka.enabled", havingValue = "true", matchIfMissing = true)
 public class RetryEventConsumer {
     private static final Logger log = LoggerFactory.getLogger(RetryEventConsumer.class);
     private static final String DLQ_TOPIC = "soa.s09.t09.events.DLQ";
@@ -41,9 +43,12 @@ public class RetryEventConsumer {
             return;
         }
 
-        if (event == null || event.getEventId() == null || event.getEventId().isBlank()) {
-            log.warn("Invalid event format received, missing eventId. Forwarding to DLQ.");
-            sendToDlq(payload, "MISSING_EVENT_ID");
+        if (event == null || event.getEventId() == null || event.getEventId().isBlank()
+                || event.getAggregateId() == null || event.getAggregateId().isBlank()
+                || event.getCorrelationId() == null || event.getCorrelationId().isBlank()
+                || !"1.0.0".equals(event.getSchemaVersion())) {
+            log.warn("Invalid event format received. Forwarding to DLQ.");
+            sendToDlq(payload, "INVALID_EVENT_METADATA");
             return;
         }
 
@@ -80,4 +85,3 @@ public class RetryEventConsumer {
         }
     }
 }
-

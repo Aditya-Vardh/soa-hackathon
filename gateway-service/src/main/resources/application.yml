@@ -1,5 +1,7 @@
 server:
   port: 8080
+security:
+  gateway-secret: ${GATEWAY_SHARED_SECRET:}
 spring:
   application:
     name: gateway-service
@@ -37,6 +39,12 @@ spring:
           uri: lb://RETRY-ENTITLEMENT-SERVICE
           predicates:
             - Path=/entitlements, /entitlements/**
+clerk:
+  jwks-url: ${CLERK_JWKS_URL:}
+  issuer-url: ${CLERK_ISSUER_URL:}
+  learner-ids: ${CLERK_LEARNER_IDS:}
+  instructor-ids: ${CLERK_INSTRUCTOR_IDS:}
+  user-mappings: ${CLERK_USER_MAPPINGS:}
 eureka:
   client:
     service-url:

@@ -60,7 +60,17 @@ public class AuthController {
     }
 
     @GetMapping("/me")
-    public ResponseEntity<Map<String, Object>> me(@RequestHeader(name = "Authorization", required = false) String authHeader) {
+    public ResponseEntity<Map<String, Object>> me(
+            @RequestHeader(name = "X-User-Id", required = false) String gatewayUserId,
+            @RequestHeader(name = "X-User-Role", required = false) String gatewayRole,
+            @RequestHeader(name = "Authorization", required = false) String authHeader) {
+        if (gatewayUserId != null && !gatewayUserId.isBlank() && gatewayRole != null && !gatewayRole.isBlank()) {
+            return ResponseEntity.ok(Map.of(
+                    "userId", gatewayUserId,
+                    "username", gatewayUserId,
+                    "role", gatewayRole,
+                    "fullName", gatewayUserId));
+        }
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing or invalid Authorization header");
         }

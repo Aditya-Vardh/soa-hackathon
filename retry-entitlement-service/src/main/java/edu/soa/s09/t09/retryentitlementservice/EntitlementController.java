@@ -80,6 +80,9 @@ public class EntitlementController {
         Entitlement entitlement = require(learnerId);
 
         synchronized (this) {
+            if (entitlement.getStartedAttempts().contains(attemptId)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Retry has already started for attempt " + attemptId);
+            }
             if (entitlement.getReservations().contains(attemptId)) {
                 return entitlement;
             }
@@ -112,7 +115,7 @@ public class EntitlementController {
             if (!entitlement.getReservations().remove(attemptId)) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Reservation not found");
             }
-            entitlement.setReservedAttemptId(entitlement.getReservedAttemptId());
+            entitlement.setReservedAttemptId(entitlement.getReservations().stream().findFirst().orElse(null));
             entitlement = entitlementRepository.save(entitlement);
         }
 
@@ -134,6 +137,12 @@ public class EntitlementController {
 
         Entitlement entitlement = require(learnerId);
 
+        synchronized (this) {
+            if (entitlement.getStartedAttempts().contains(attemptId)) {
+                return entitlement;
+            }
+        }
+
         // Critical Business Rule 1 & Review Checklist: Feedback acknowledgement is actually enforced before retry start
         if (enforceAck) {
             boolean acked = feedbackServiceClient.isFeedbackAcknowledged(attemptId);
@@ -147,10 +156,13 @@ public class EntitlementController {
             if (!entitlement.getReservations().remove(attemptId)) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Retry must be reserved before start");
             }
+            if (entitlement.getTokens() <= 0) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "No token available");
+            }
             entitlement.getStartedAttempts().add(attemptId);
             // Critical Business Rule 4: Consume token only when retry actually starts
             entitlement.setTokens(entitlement.getTokens() - 1);
-            entitlement.setReservedAttemptId(entitlement.getReservedAttemptId());
+            entitlement.setReservedAttemptId(entitlement.getReservations().stream().findFirst().orElse(null));
             entitlement = entitlementRepository.save(entitlement);
         }
 

@@ -21,6 +21,9 @@ import java.util.List;
 @Component
 public class JwtAuthFilter implements GlobalFilter, Ordered {
     private final JwtUtil jwtUtil;
+    private final ClerkJwtVerifier clerkJwtVerifier;
+    @org.springframework.beans.factory.annotation.Value("${security.gateway-secret:}")
+    private String gatewaySecret;
 
     private static final List<String> EXCLUDED_PREFIXES = List.of(
             "/auth/login",
@@ -30,6 +33,13 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
 
     public JwtAuthFilter(JwtUtil jwtUtil) {
         this.jwtUtil = jwtUtil;
+        this.clerkJwtVerifier = null;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public JwtAuthFilter(JwtUtil jwtUtil, ClerkJwtVerifier clerkJwtVerifier) {
+        this.jwtUtil = jwtUtil;
+        this.clerkJwtVerifier = clerkJwtVerifier;
     }
 
     @Override
@@ -37,22 +47,19 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         ServerHttpRequest request = exchange.getRequest();
         String path = request.getPath().value();
 
-        // Allow CORS pre-flight
         if (request.getMethod() == HttpMethod.OPTIONS) {
             return chain.filter(exchange);
         }
 
-        // Allow seed endpoint for demo / testing convenience
-        if (path.contains("/seed") || EXCLUDED_PREFIXES.stream().anyMatch(path::startsWith)) {
-            // Still parse token if present to populate headers
+        if (EXCLUDED_PREFIXES.stream().anyMatch(path::startsWith)) {
             String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
             if (authHeader != null && authHeader.startsWith("Bearer ")) {
                 try {
                     String token = authHeader.substring(7).trim();
-                    Claims claims = jwtUtil.validateAndGetClaims(token);
+                    AuthenticatedUser user = validateUser(token);
                     ServerHttpRequest mutated = request.mutate()
-                            .header("X-User-Id", claims.getSubject())
-                            .header("X-User-Role", claims.get("role", String.class))
+                            .header("X-User-Id", user.id())
+                            .header("X-User-Role", user.role())
                             .build();
                     return chain.filter(exchange.mutate().request(mutated).build());
                 } catch (Exception ignored) {
@@ -68,13 +75,18 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
 
         String token = authHeader.substring(7).trim();
         try {
-            Claims claims = jwtUtil.validateAndGetClaims(token);
-            String username = claims.getSubject();
-            String role = claims.get("role", String.class);
+            AuthenticatedUser user = validateUser(token);
 
             ServerHttpRequest mutated = request.mutate()
-                    .header("X-User-Id", username)
-                    .header("X-User-Role", role)
+                    .headers(headers -> {
+                        headers.remove("X-User-Id");
+                        headers.remove("X-User-Role");
+                        headers.set("X-User-Id", user.id());
+                        headers.set("X-User-Role", user.role());
+                        if (gatewaySecret != null && !gatewaySecret.isBlank()) {
+                            headers.set("X-Gateway-Secret", gatewaySecret);
+                        }
+                    })
                     .build();
 
             return chain.filter(exchange.mutate().request(mutated).build());
@@ -82,6 +94,25 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             return onError(exchange, HttpStatus.UNAUTHORIZED, "Invalid or expired JWT token: " + e.getMessage());
         }
     }
+
+    private AuthenticatedUser validateUser(String token) {
+        try {
+            Claims claims = jwtUtil.validateAndGetClaims(token);
+            if (claims != null && claims.getSubject() != null) {
+                return new AuthenticatedUser(claims.getSubject(), claims.get("role", String.class));
+            }
+        } catch (Exception ignored) {
+        }
+
+        if (clerkJwtVerifier != null && clerkJwtVerifier.isConfigured()) {
+            ClerkJwtVerifier.VerifiedUser user = clerkJwtVerifier.verify(token);
+            return new AuthenticatedUser(user.id(), user.role());
+        }
+
+        throw new IllegalArgumentException("Invalid JWT signature or unrecognized token format");
+    }
+
+    private record AuthenticatedUser(String id, String role) {}
 
     private Mono<Void> onError(ServerWebExchange exchange, HttpStatus status, String message) {
         ServerHttpResponse response = exchange.getResponse();
@@ -97,4 +128,3 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         return -100;
     }
 }
-

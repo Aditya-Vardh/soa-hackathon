@@ -1,5 +1,7 @@
 server:
   port: 8082
+security:
+  gateway-secret: ${GATEWAY_SHARED_SECRET:}
 spring:
   application:
     name: lab-attempt-service
@@ -13,13 +15,14 @@ spring:
     open-in-view: false
 
   kafka:
+    enabled: ${KAFKA_ENABLED:false}
     bootstrap-servers: localhost:9092
     consumer:
       group-id: lab-attempt-service-group
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      auto-startup: false
+      auto-startup: true
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer

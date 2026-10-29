@@ -1,0 +1,6 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://127.0.0.1:55432/labattemptservice?options=-c%20TimeZone%3DUTC
+    username: retrylab
+    password: retrylab
+    driver-class-name: org.postgresql.Driver

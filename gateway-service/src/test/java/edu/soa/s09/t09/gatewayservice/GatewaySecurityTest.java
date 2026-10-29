@@ -3,26 +3,30 @@ package edu.soa.s09.t09.gatewayservice;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
 import reactor.core.publisher.Mono;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.*;
 
 class GatewaySecurityTest {
     private JwtUtil jwtUtil;
     private JwtAuthFilter filter;
+    private AtomicBoolean chainCalled;
     private GatewayFilterChain chain;
 
     @BeforeEach
     void setUp() {
         jwtUtil = new JwtUtil();
         filter = new JwtAuthFilter(jwtUtil);
-        chain = mock(GatewayFilterChain.class);
-        when(chain.filter(any())).thenReturn(Mono.empty());
+        chainCalled = new AtomicBoolean(false);
+        chain = exchange -> {
+            chainCalled.set(true);
+            return Mono.empty();
+        };
     }
 
     @Test
@@ -32,7 +36,7 @@ class GatewaySecurityTest {
 
         filter.filter(exchange, chain).block();
 
-        verify(chain).filter(any());
+        assertThat(chainCalled.get()).isTrue();
         assertThat(exchange.getResponse().getStatusCode()).isNull(); // Not rejected
     }
 
@@ -43,8 +47,7 @@ class GatewaySecurityTest {
 
         filter.filter(exchange, chain).block();
 
-        verify(chain, never()).filter(any());
+        assertThat(chainCalled.get()).isFalse();
         assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 }
-

@@ -10,11 +10,14 @@ import org.springframework.web.server.ResponseStatusException;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import org.springframework.beans.factory.annotation.Value;
 
 @Component
 public class SecurityHelper {
     public static final String SECRET = "soa-s24-s09-t09-retrylab-jwt-super-secret-key-for-token-signing-32bytes";
     private final SecretKey key = Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8));
+    @Value("${security.gateway-secret:}")
+    private String gatewaySecret;
 
     public static class UserContext {
         public final String userId;
@@ -37,6 +40,9 @@ public class SecurityHelper {
     public UserContext getCaller(HttpServletRequest request) {
         String gatewayUserId = request.getHeader("X-User-Id");
         String gatewayRole = request.getHeader("X-User-Role");
+        if (gatewaySecret != null && !gatewaySecret.isBlank() && !gatewaySecret.equals(request.getHeader("X-Gateway-Secret"))) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing trusted gateway authentication");
+        }
 
         if (gatewayUserId != null && !gatewayUserId.isBlank()) {
             return new UserContext(gatewayUserId.trim(), gatewayRole != null ? gatewayRole.trim() : "ROLE_LEARNER");
@@ -52,7 +58,7 @@ public class SecurityHelper {
             }
         }
 
-        return new UserContext(null, null);
+        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Authentication required");
     }
 
     public void verifyLearnerAccess(UserContext caller, String targetLearnerId) {
@@ -67,4 +73,3 @@ public class SecurityHelper {
         }
     }
 }
-

@@ -1,5 +1,7 @@
 server:
   port: 8084
+security:
+  gateway-secret: ${GATEWAY_SHARED_SECRET:}
 spring:
   application:
     name: retry-entitlement-service
@@ -13,6 +15,7 @@ spring:
     open-in-view: false
 
   kafka:
+    enabled: ${KAFKA_ENABLED:false}
     bootstrap-servers: localhost:9092
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer

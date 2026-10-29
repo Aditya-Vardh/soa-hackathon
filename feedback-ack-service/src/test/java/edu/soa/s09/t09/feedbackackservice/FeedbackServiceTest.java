@@ -5,20 +5,42 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.lang.reflect.Proxy;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.*;
 
 class FeedbackServiceTest {
     private FeedbackRepository feedbackRepository;
     private SecurityHelper securityHelper;
     private FeedbackController feedbackController;
+    private Map<Long, Feedback> feedbackMap;
 
     @BeforeEach
     void setUp() {
-        feedbackRepository = mock(FeedbackRepository.class);
+        feedbackMap = new HashMap<>();
+        feedbackRepository = (FeedbackRepository) Proxy.newProxyInstance(
+                FeedbackRepository.class.getClassLoader(),
+                new Class<?>[]{FeedbackRepository.class},
+                (proxy, method, args) -> {
+                    if ("findById".equals(method.getName()) && args != null && args.length > 0) {
+                        return Optional.ofNullable(feedbackMap.get(args[0]));
+                    }
+                    if ("save".equals(method.getName()) && args != null && args.length > 0) {
+                        Feedback f = (Feedback) args[0];
+                        if (f.getId() == null) f.setId((long) (feedbackMap.size() + 1));
+                        feedbackMap.put(f.getId(), f);
+                        return f;
+                    }
+                    if ("count".equals(method.getName())) {
+                        return (long) feedbackMap.size();
+                    }
+                    return null;
+                }
+        );
         securityHelper = new SecurityHelper();
         feedbackController = new FeedbackController(feedbackRepository, securityHelper);
     }
@@ -27,7 +49,7 @@ class FeedbackServiceTest {
     void learnerCannotAcknowledgeAnotherLearnersFeedback() {
         Feedback f = new Feedback("learner2", "attempt-1", "Review sorting invariant", "instructor1");
         f.setId(10L);
-        when(feedbackRepository.findById(10L)).thenReturn(Optional.of(f));
+        feedbackMap.put(10L, f);
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("X-User-Id", "learner1");
@@ -42,8 +64,7 @@ class FeedbackServiceTest {
     void learnerCanAcknowledgeOwnFeedback() {
         Feedback f = new Feedback("learner1", "attempt-1", "Review sorting invariant", "instructor1");
         f.setId(10L);
-        when(feedbackRepository.findById(10L)).thenReturn(Optional.of(f));
-        when(feedbackRepository.save(any(Feedback.class))).thenAnswer(i -> i.getArgument(0));
+        feedbackMap.put(10L, f);
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("X-User-Id", "learner1");
@@ -54,4 +75,3 @@ class FeedbackServiceTest {
         assertThat(result.getAcknowledgedAt()).isNotNull();
     }
 }
-

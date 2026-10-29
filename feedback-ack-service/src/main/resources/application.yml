@@ -1,5 +1,7 @@
 server:
   port: 8083
+security:
+  gateway-secret: ${GATEWAY_SHARED_SECRET:}
 spring:
   application:
     name: feedback-ack-service

@@ -3,15 +3,18 @@ package edu.soa.s09.t09.labattemptservice;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.lang.reflect.Proxy;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.*;
 
 class AttemptServiceTest {
     private AttemptRepository attemptRepository;
@@ -19,22 +22,62 @@ class AttemptServiceTest {
     private SecurityHelper securityHelper;
     private AttemptController attemptController;
     private RetryEventConsumer retryEventConsumer;
-    private KafkaTemplate<String, Object> kafkaTemplate;
+    private Map<Long, Attempt> attemptMap;
+    private Set<String> processedEvents;
+    private int saveCallCount;
 
     @BeforeEach
     void setUp() {
-        attemptRepository = mock(AttemptRepository.class);
-        processedEventRepository = mock(ProcessedEventRepository.class);
+        attemptMap = new HashMap<>();
+        processedEvents = new HashSet<>();
+        saveCallCount = 0;
+
+        attemptRepository = (AttemptRepository) Proxy.newProxyInstance(
+                AttemptRepository.class.getClassLoader(),
+                new Class<?>[]{AttemptRepository.class},
+                (proxy, method, args) -> {
+                    if ("findById".equals(method.getName()) && args != null && args.length > 0) {
+                        return Optional.ofNullable(attemptMap.get(args[0]));
+                    }
+                    if ("save".equals(method.getName()) && args != null && args.length > 0) {
+                        saveCallCount++;
+                        Attempt a = (Attempt) args[0];
+                        if (a.getId() == null) a.setId((long) (attemptMap.size() + 1));
+                        attemptMap.put(a.getId(), a);
+                        return a;
+                    }
+                    if ("count".equals(method.getName())) {
+                        return (long) attemptMap.size();
+                    }
+                    return null;
+                }
+        );
+
+        processedEventRepository = (ProcessedEventRepository) Proxy.newProxyInstance(
+                ProcessedEventRepository.class.getClassLoader(),
+                new Class<?>[]{ProcessedEventRepository.class},
+                (proxy, method, args) -> {
+                    if ("existsById".equals(method.getName()) && args != null && args.length > 0) {
+                        return processedEvents.contains(args[0]);
+                    }
+                    if ("save".equals(method.getName()) && args != null && args.length > 0) {
+                        ProcessedEvent pe = (ProcessedEvent) args[0];
+                        processedEvents.add(pe.getEventId());
+                        return pe;
+                    }
+                    return null;
+                }
+        );
+
         securityHelper = new SecurityHelper();
         attemptController = new AttemptController(attemptRepository, securityHelper);
-        kafkaTemplate = mock(KafkaTemplate.class);
-        retryEventConsumer = new RetryEventConsumer(attemptRepository, processedEventRepository, new ObjectMapper(), kafkaTemplate);
+        retryEventConsumer = new RetryEventConsumer(attemptRepository, processedEventRepository, new ObjectMapper(), null);
     }
 
     @Test
     void learnerCannotAccessAnotherLearnersAttempt() {
         Attempt otherAttempt = new Attempt(10L, "learner2", "lab-09", "FAILED");
-        when(attemptRepository.findById(10L)).thenReturn(Optional.of(otherAttempt));
+        attemptMap.put(10L, otherAttempt);
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("X-User-Id", "learner1");
@@ -48,7 +91,7 @@ class AttemptServiceTest {
     @Test
     void instructorCanAccessAnyLearnerAttempt() {
         Attempt otherAttempt = new Attempt(10L, "learner2", "lab-09", "FAILED");
-        when(attemptRepository.findById(10L)).thenReturn(Optional.of(otherAttempt));
+        attemptMap.put(10L, otherAttempt);
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("X-User-Id", "instructor1");
@@ -61,15 +104,11 @@ class AttemptServiceTest {
     @Test
     void duplicateKafkaEventsAreDeduplicatedIdempotently() {
         String eventId = "evt-12345";
-        LabRetryStartedEvent event = new LabRetryStartedEvent(eventId, "attempt-10", "learner1", System.currentTimeMillis());
+        processedEvents.add(eventId); // Already processed
 
-        // Event already processed
-        when(processedEventRepository.existsById(eventId)).thenReturn(true);
-
-        retryEventConsumer.onMessage("{\"eventId\":\"" + eventId + "\",\"eventType\":\"LabRetryStarted\",\"attemptId\":\"10\",\"learnerId\":\"learner1\"}");
+        retryEventConsumer.onMessage("{\"eventId\":\"" + eventId + "\",\"eventType\":\"LabRetryStarted\",\"aggregateId\":\"attempt-10\",\"schemaVersion\":\"1.0.0\",\"occurredAt\":\"2026-01-01T00:00:00Z\",\"correlationId\":\"corr-" + eventId + "\",\"attemptId\":\"10\",\"learnerId\":\"learner1\"}");
 
         // Verify attempt repository was never updated
-        verify(attemptRepository, never()).save(any());
+        assertThat(saveCallCount).isEqualTo(0);
     }
 }
-
